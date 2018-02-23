@@ -1,5 +1,5 @@
 {
-	"ImportPath": "github.com/pivotal-cf/service-metrics",
+	"ImportPath": "github.com/cloudfoundry/service-metrics",
 	"GoVersion": "go1.7",
 	"GodepVersion": "v74",
 	"Packages": [

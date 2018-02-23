@@ -21,7 +21,7 @@ import (
 	"code.cloudfoundry.org/lager"
 	"github.com/cloudfoundry/dropsonde"
 	dmetrics "github.com/cloudfoundry/dropsonde/metrics"
-	"github.com/pivotal-cf/service-metrics/metrics"
+	"github.com/cloudfoundry/service-metrics/metrics"
 )
 
 var (

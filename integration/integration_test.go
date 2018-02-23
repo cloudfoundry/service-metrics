@@ -14,13 +14,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cloudfoundry/service-metrics/metrics"
 	"github.com/cloudfoundry/sonde-go/events"
 	"github.com/gogo/protobuf/proto"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
-	"github.com/pivotal-cf/service-metrics/metrics"
 	. "github.com/st3v/glager"
 )
 
