@@ -9,32 +9,36 @@
 package integration_test
 
 import (
+	"context"
 	"errors"
 	"net"
 	"sync"
-	"time"
 
-	"github.com/cloudfoundry/service-metrics/metrics"
-	"github.com/cloudfoundry/sonde-go/events"
-	"github.com/gogo/protobuf/proto"
+	loggregator "code.cloudfoundry.org/go-loggregator"
+	"code.cloudfoundry.org/go-loggregator/rpc/loggregator_v2"
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
 	"github.com/onsi/gomega/gbytes"
 	"github.com/onsi/gomega/gexec"
 	. "github.com/st3v/glager"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 var _ = Describe("service-metrics", func() {
 
 	var (
 		origin          string
-		metronAddr      string
+		agentAddr       string
 		metricsCmd      string
 		metricsCmdArgs  []string
 		metricsInterval string
 		debugLog        bool
 		session         *gexec.Session
-		metronPort      = ":3777"
+		caPath          string
+		certPath        string
+		keyPath         string
+		stubAgent       *stubAgent
 	)
 
 	var metricsJson = `
@@ -53,20 +57,39 @@ var _ = Describe("service-metrics", func() {
 	`
 
 	BeforeEach(func() {
+		stubAgent = newStubAgent()
 		origin = "p-service-origin"
 		debugLog = false
-		metronAddr = "localhost" + metronPort
+		agentAddr = stubAgent.address
 		metricsCmd = "/bin/echo"
 		metricsCmdArgs = []string{"-n", metricsJson}
 		metricsInterval = "10ms"
+		caPath = Cert("loggregator-ca.crt")
+		certPath = Cert("service-metrics.crt")
+		keyPath = Cert("service-metrics.key")
 	})
 
 	JustBeforeEach(func() {
-		session = runCmd(origin, debugLog, metronAddr, metricsInterval, metricsCmd, metricsCmdArgs...)
+		session = runCmd(origin, debugLog, agentAddr, metricsInterval, metricsCmd, caPath, certPath, keyPath, metricsCmdArgs...)
 	})
 
 	AfterEach(func() {
 		Eventually(session.Interrupt()).Should(gexec.Exit())
+	})
+
+	Context("when loggregator-agent is running", func() {
+		It("repeatedly emits metrics", func() {
+			Eventually(func() int {
+				return len(stubAgent.GetEnvelopes())
+			}).Should(BeNumerically(">", 5))
+			env := stubAgent.GetEnvelopes()[0]
+			Expect(env.GetGauge().GetMetrics()).To(HaveKeyWithValue("loadMetric",
+				&loggregator_v2.GaugeValue{Value: 4.0, Unit: "Load"},
+			))
+			Expect(env.GetGauge().GetMetrics()).To(HaveKeyWithValue("temperatureMetric",
+				&loggregator_v2.GaugeValue{Value: 99, Unit: "Temperature"},
+			))
+		})
 	})
 
 	It("never exits", func() {
@@ -216,9 +239,9 @@ var _ = Describe("service-metrics", func() {
 		})
 	})
 
-	Context("when the --metron-address param is not provided", func() {
+	Context("when the --agent-addr param is not provided", func() {
 		BeforeEach(func() {
-			metronAddr = ""
+			agentAddr = ""
 		})
 
 		It("exits with a non-zero exit code", func() {
@@ -228,7 +251,7 @@ var _ = Describe("service-metrics", func() {
 		It("provides a meaningful error message", func() {
 			Eventually(func() *gbytes.Buffer {
 				return session.Err
-			}).Should(gbytes.Say("Must provide --metron-addr"))
+			}).Should(gbytes.Say("Must provide --agent-addr"))
 		})
 	})
 
@@ -248,104 +271,128 @@ var _ = Describe("service-metrics", func() {
 		})
 	})
 
-	Context("when Metron is running", func() {
-		var (
-			lock            sync.RWMutex
-			udpListener     net.PacketConn
-			receivedOrigins []string
-			receivedMetrics metrics.Metrics
-		)
-
-		var listenForEvents = func() {
-			for {
-				buffer := make([]byte, 1024)
-				n, _, err := udpListener.ReadFrom(buffer)
-				if err != nil {
-					return
-				}
-
-				if n == 0 {
-					panic("Received empty packet")
-				}
-
-				envelope := new(events.Envelope)
-				err = proto.Unmarshal(buffer[0:n], envelope)
-				if err != nil {
-					panic(err)
-				}
-
-				if envelope.GetEventType() == events.Envelope_ValueMetric {
-					lock.Lock()
-
-					receivedOrigins = append(receivedOrigins, envelope.GetOrigin())
-
-					m := envelope.GetValueMetric()
-					receivedMetrics = append(
-						receivedMetrics,
-						metrics.Metric{
-							Key:   m.GetName(),
-							Value: m.GetValue(),
-							Unit:  m.GetUnit(),
-						},
-					)
-					lock.Unlock()
-				}
-			}
-		}
-
-		var assertMetricReceived = func(m metrics.Metric, count int) {
-			var assertion = func() int {
-				count := 0
-
-				lock.RLock()
-				defer lock.RUnlock()
-
-				for _, received := range receivedMetrics {
-					if received == m {
-						count += 1
-					}
-				}
-
-				return count
-			}
-
-			Eventually(assertion, 1*time.Second).Should(BeNumerically(">=", count))
-		}
-
+	Context("when the --ca param is not provided", func() {
 		BeforeEach(func() {
-			var err error
-			udpListener, err = net.ListenPacket("udp4", metronPort)
-			Expect(err).ToNot(HaveOccurred())
-
-			go listenForEvents()
+			caPath = ""
 		})
 
-		AfterEach(func() {
-			udpListener.Close()
+		It("returns with a non-zero exit code", func() {
+			Eventually(session.ExitCode).Should(BeNumerically(">", 0))
 		})
 
-		It("repeatedly emits metrics to Metron", func() {
-			assertMetricReceived(
-				metrics.Metric{
-					Key:   "loadMetric",
-					Value: 4,
-					Unit:  "Load",
-				},
-				50,
-			)
+		It("provides a meaningful error message", func() {
+			Eventually(func() *gbytes.Buffer {
+				return session.Err
+			}).Should(gbytes.Say("Must provide --ca"))
+		})
+	})
 
-			assertMetricReceived(
-				metrics.Metric{
-					Key:   "temperatureMetric",
-					Value: 99,
-					Unit:  "Temperature",
-				},
-				50,
-			)
+	Context("when the --cert param is not provided", func() {
+		BeforeEach(func() {
+			certPath = ""
+		})
 
-			for _, origin := range receivedOrigins {
-				Expect(origin).To(Equal("p-service-origin"))
-			}
+		It("returns with a non-zero exit code", func() {
+			Eventually(session.ExitCode).Should(BeNumerically(">", 0))
+		})
+
+		It("provides a meaningful error message", func() {
+			Eventually(func() *gbytes.Buffer {
+				return session.Err
+			}).Should(gbytes.Say("Must provide --cert"))
+		})
+	})
+
+	Context("when the --key param is not provided", func() {
+		BeforeEach(func() {
+			keyPath = ""
+		})
+
+		It("returns with a non-zero exit code", func() {
+			Eventually(session.ExitCode).Should(BeNumerically(">", 0))
+		})
+
+		It("provides a meaningful error message", func() {
+			Eventually(func() *gbytes.Buffer {
+				return session.Err
+			}).Should(gbytes.Say("Must provide --key"))
 		})
 	})
 })
+
+type stubAgent struct {
+	address   string
+	lock      sync.Mutex
+	envelopes []*loggregator_v2.Envelope
+}
+
+func newStubAgent() *stubAgent {
+	l, err := net.Listen("tcp", ":0")
+	if err != nil {
+		panic(err)
+	}
+
+	agent := &stubAgent{
+		address: l.Addr().String(),
+	}
+
+	tlsConfig, err := loggregator.NewIngressTLSConfig(
+		Cert("loggregator-ca.crt"),
+		Cert("metron.crt"),
+		Cert("metron.key"),
+	)
+	if err != nil {
+		panic(err)
+	}
+
+	server := grpc.NewServer(
+		grpc.Creds(credentials.NewTLS(tlsConfig)),
+	)
+
+	loggregator_v2.RegisterIngressServer(server, agent)
+	go server.Serve(l)
+
+	return agent
+}
+
+func (a *stubAgent) Sender(loggregator_v2.Ingress_SenderServer) error {
+	panic("not implemented")
+}
+
+func (a *stubAgent) BatchSender(s loggregator_v2.Ingress_BatchSenderServer) error {
+	for {
+		if isDone(s.Context()) {
+			return nil
+		}
+
+		eb, err := s.Recv()
+		if err != nil {
+			return err
+		}
+
+		a.lock.Lock()
+		for _, e := range eb.GetBatch() {
+			a.envelopes = append(a.envelopes, e)
+		}
+		a.lock.Unlock()
+	}
+}
+
+func (a *stubAgent) Send(context.Context, *loggregator_v2.EnvelopeBatch) (*loggregator_v2.SendResponse, error) {
+	panic("not implemented")
+}
+
+func (a *stubAgent) GetEnvelopes() []*loggregator_v2.Envelope {
+	a.lock.Lock()
+	defer a.lock.Unlock()
+	return a.envelopes
+}
+
+func isDone(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
+}

@@ -1,11 +1,3 @@
-// Copyright (C) 2015-Present Pivotal Software, Inc. All rights reserved.
-// This program and the accompanying materials are made available under the terms of the under the Apache License,
-// Version 2.0 (the "License"); you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
-// Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
-// on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and limitations under the License.
-
 package main
 
 import (
@@ -18,20 +10,77 @@ import (
 	"syscall"
 	"time"
 
+	loggregator "code.cloudfoundry.org/go-loggregator"
 	"code.cloudfoundry.org/lager"
-	"github.com/cloudfoundry/dropsonde"
-	dmetrics "github.com/cloudfoundry/dropsonde/metrics"
 	"github.com/cloudfoundry/service-metrics/metrics"
 )
 
 var (
 	origin          string
-	metronAddr      string
+	agentAddr       string
 	metricsInterval time.Duration
 	metricsCmd      string
 	metricsCmdArgs  multiFlag
 	debug           bool
+	caPath          string
+	certPath        string
+	keyPath         string
 )
+
+func main() {
+	flag.StringVar(&origin, "origin", "", "Required. Source name for metrics emitted by this process, e.g. service-name")
+	flag.StringVar(&agentAddr, "agent-addr", "", "Required. Loggregator agent address, e.g. localhost:2346")
+	flag.StringVar(&metricsCmd, "metrics-cmd", "", "Required. Path to metrics command")
+	flag.StringVar(&caPath, "ca", "", "Required. Path to CA certificate")
+	flag.StringVar(&certPath, "cert", "", "Required. Path to client TLS certificate")
+	flag.StringVar(&keyPath, "key", "", "Required. Path to client TLS private key")
+	flag.Var(&metricsCmdArgs, "metrics-cmd-arg", "Argument to pass on to metrics-cmd (multi-valued)")
+	flag.DurationVar(&metricsInterval, "metrics-interval", time.Minute, "Interval to run metrics-cmd")
+	flag.BoolVar(&debug, "debug", false, "Output debug logging")
+
+	flag.Parse()
+
+	assertFlag("origin", origin)
+	assertFlag("agent-addr", agentAddr)
+	assertFlag("metrics-cmd", metricsCmd)
+	assertFlag("ca", caPath)
+	assertFlag("cert", certPath)
+	assertFlag("key", keyPath)
+
+	stdoutLogLevel := lager.INFO
+	if debug {
+		stdoutLogLevel = lager.DEBUG
+	}
+
+	logger := lager.NewLogger("service-metrics")
+	logger.RegisterSink(lager.NewWriterSink(os.Stdout, stdoutLogLevel))
+	logger.RegisterSink(lager.NewWriterSink(os.Stderr, lager.ERROR))
+
+	tlsConfig, err := loggregator.NewIngressTLSConfig(caPath, certPath, keyPath)
+	if err != nil {
+		logger.Error("Failed to load TLS config", err)
+		os.Exit(1)
+	}
+
+	loggregatorClient, err := loggregator.NewIngressClient(tlsConfig,
+		loggregator.WithAddr(agentAddr),
+		loggregator.WithLogger(&logWrapper{logger}),
+	)
+	if err != nil {
+		logger.Error("Failed to initialize loggregator client", err)
+		os.Exit(1)
+	}
+
+	egressClient := metrics.NewEgressClient(loggregatorClient, origin)
+
+	process(logger, egressClient, metricsCmd, metricsCmdArgs...)
+	for {
+		select {
+		case <-time.After(metricsInterval):
+			process(logger, egressClient, metricsCmd, metricsCmdArgs...)
+		}
+	}
+}
 
 type multiFlag []string
 
@@ -57,45 +106,7 @@ func assertFlag(name, value string) {
 	}
 }
 
-func main() {
-	flag.StringVar(&origin, "origin", "", "Required. Source name for metrics emitted by this process, e.g. service-name")
-	flag.StringVar(&metronAddr, "metron-addr", "", "Required. Metron address, e.g. localhost:2346")
-	flag.StringVar(&metricsCmd, "metrics-cmd", "", "Required. Path to metrics command")
-	flag.Var(&metricsCmdArgs, "metrics-cmd-arg", "Argument to pass on to metrics-cmd (multi-valued)")
-	flag.DurationVar(&metricsInterval, "metrics-interval", time.Minute, "Interval to run metrics-cmd")
-	flag.BoolVar(&debug, "debug", false, "Output debug logging")
-
-	flag.Parse()
-
-	assertFlag("origin", origin)
-	assertFlag("metron-addr", metronAddr)
-	assertFlag("metrics-cmd", metricsCmd)
-
-	stdoutLogLevel := lager.INFO
-	if debug {
-		stdoutLogLevel = lager.DEBUG
-	}
-
-	logger := lager.NewLogger("service-metrics")
-	logger.RegisterSink(lager.NewWriterSink(os.Stdout, stdoutLogLevel))
-	logger.RegisterSink(lager.NewWriterSink(os.Stderr, lager.ERROR))
-
-	err := dropsonde.Initialize(metronAddr, origin)
-	if err != nil {
-		logger.Error("Dropsonde failed to initialize", err)
-		os.Exit(1)
-	}
-
-	process(logger)
-	for {
-		select {
-		case <-time.After(metricsInterval):
-			process(logger)
-		}
-	}
-}
-
-func process(logger lager.Logger) {
+func process(logger metrics.Logger, egressClient *metrics.EgressClient, metricsCmd string, metricsCmdArgs ...string) {
 	action := "executing-metrics-cmd"
 
 	logger.Info(action, lager.Data{
@@ -146,15 +157,13 @@ func process(logger lager.Logger) {
 		os.Exit(1)
 	}
 
-	for _, m := range parsedMetrics {
-		err := dmetrics.SendValue(m.Key, m.Value, m.Unit)
-		if err != nil {
-			logger.Error("sending metric value failed", err, lager.Data{
-				"event":        "failed",
-				"metric.key":   m.Key,
-				"metric.value": m.Value,
-				"metric.unit":  m.Unit,
-			})
-		}
-	}
+	egressClient.Emit(parsedMetrics, logger)
+}
+
+type logWrapper struct {
+	lager.Logger
+}
+
+func (l *logWrapper) Printf(f string, a ...interface{}) {
+	l.Info(fmt.Sprintf(f, a...))
 }
