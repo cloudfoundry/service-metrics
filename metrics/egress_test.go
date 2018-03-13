@@ -20,15 +20,16 @@ var _ = Describe("Egress", func() {
 		c   *metrics.EgressClient
 		env *loggregator_v2.Envelope
 	)
+
 	BeforeEach(func() {
 		m = metrics.Metrics{
-			metrics.Metric{
-				Key:   "origin-1",
+			{
+				Key:   "metric-1",
 				Value: 0.1,
 				Unit:  "s",
 			},
-			metrics.Metric{
-				Key:   "origin-2",
+			{
+				Key:   "metric-2",
 				Value: 1.3,
 				Unit:  "s",
 			},
@@ -46,11 +47,10 @@ var _ = Describe("Egress", func() {
 		l = newSpyLogger()
 		in = newSpyIngressClient()
 		c = metrics.NewEgressClient(in, "source-1")
-
 	})
+
 	Context("Emit", func() {
 		It("passes logs to IngressClient", func() {
-
 			c.SetInstanceID(3)
 
 			c.Emit(m, l)
@@ -61,10 +61,10 @@ var _ = Describe("Egress", func() {
 				o(env)
 			}
 
-			Expect(env.GetGauge().Metrics).To(HaveKeyWithValue("origin-2",
+			Expect(env.GetGauge().Metrics).To(HaveKeyWithValue("metric-2",
 				&loggregator_v2.GaugeValue{Value: 1.3, Unit: "s"}),
 			)
-			Expect(env.GetGauge().Metrics).To(HaveKeyWithValue("origin-1",
+			Expect(env.GetGauge().Metrics).To(HaveKeyWithValue("metric-1",
 				&loggregator_v2.GaugeValue{Value: 0.1, Unit: "s"}),
 			)
 			Expect(env.SourceId).To(Equal("source-1"))

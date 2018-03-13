@@ -38,9 +38,21 @@ var _ = AfterSuite(func() {
 	gexec.CleanupBuildArtifacts()
 })
 
-func runCmd(origin string, debugLog bool, agentAddress, metricsInterval, metricsCmd, caPath, certPath, keyPath string, metricsCmdArgs ...string) *gexec.Session {
+func runCmd(
+	origin string,
+	sourceID string,
+	debugLog bool,
+	agentAddress string,
+	metricsInterval string,
+	metricsCmd string,
+	caPath string,
+	certPath string,
+	keyPath string,
+	metricsCmdArgs ...string,
+) *gexec.Session {
 	cmdArgs := []string{
 		"--origin", origin,
+		"--source-id", sourceID,
 		"--agent-addr", agentAddress,
 		"--metrics-interval", metricsInterval,
 		"--metrics-cmd", metricsCmd,

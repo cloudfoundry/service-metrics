@@ -29,6 +29,7 @@ var _ = Describe("service-metrics", func() {
 
 	var (
 		origin          string
+		sourceID        string
 		agentAddr       string
 		metricsCmd      string
 		metricsCmdArgs  []string
@@ -59,6 +60,7 @@ var _ = Describe("service-metrics", func() {
 	BeforeEach(func() {
 		stubAgent = newStubAgent()
 		origin = "p-service-origin"
+		sourceID = "my-source-id"
 		debugLog = false
 		agentAddr = stubAgent.address
 		metricsCmd = "/bin/echo"
@@ -70,7 +72,18 @@ var _ = Describe("service-metrics", func() {
 	})
 
 	JustBeforeEach(func() {
-		session = runCmd(origin, debugLog, agentAddr, metricsInterval, metricsCmd, caPath, certPath, keyPath, metricsCmdArgs...)
+		session = runCmd(
+			origin,
+			sourceID,
+			debugLog,
+			agentAddr,
+			metricsInterval,
+			metricsCmd,
+			caPath,
+			certPath,
+			keyPath,
+			metricsCmdArgs...,
+		)
 	})
 
 	AfterEach(func() {
@@ -83,12 +96,30 @@ var _ = Describe("service-metrics", func() {
 				return len(stubAgent.GetEnvelopes())
 			}).Should(BeNumerically(">", 5))
 			env := stubAgent.GetEnvelopes()[0]
+
 			Expect(env.GetGauge().GetMetrics()).To(HaveKeyWithValue("loadMetric",
 				&loggregator_v2.GaugeValue{Value: 4.0, Unit: "Load"},
 			))
 			Expect(env.GetGauge().GetMetrics()).To(HaveKeyWithValue("temperatureMetric",
 				&loggregator_v2.GaugeValue{Value: 99, Unit: "Temperature"},
 			))
+			Expect(env.Tags["origin"]).To(Equal("p-service-origin"))
+			Expect(env.SourceId).To(Equal("my-source-id"))
+		})
+	})
+
+	Context("when no source ID is given", func() {
+		BeforeEach(func() {
+			sourceID = ""
+		})
+
+		It("uses the origin as the source ID", func() {
+			Eventually(func() int {
+				return len(stubAgent.GetEnvelopes())
+			}).Should(BeNumerically(">", 5))
+			env := stubAgent.GetEnvelopes()[0]
+
+			Expect(env.SourceId).To(Equal("p-service-origin"))
 		})
 	})
 

@@ -17,6 +17,7 @@ import (
 
 var (
 	origin          string
+	sourceID        string
 	agentAddr       string
 	metricsInterval time.Duration
 	metricsCmd      string
@@ -34,6 +35,7 @@ func main() {
 	flag.StringVar(&caPath, "ca", "", "Required. Path to CA certificate")
 	flag.StringVar(&certPath, "cert", "", "Required. Path to client TLS certificate")
 	flag.StringVar(&keyPath, "key", "", "Required. Path to client TLS private key")
+	flag.StringVar(&sourceID, "source-id", "", "Source ID to be applied to all envelopes.")
 	flag.Var(&metricsCmdArgs, "metrics-cmd-arg", "Argument to pass on to metrics-cmd (multi-valued)")
 	flag.DurationVar(&metricsInterval, "metrics-interval", time.Minute, "Interval to run metrics-cmd")
 	flag.BoolVar(&debug, "debug", false, "Output debug logging")
@@ -46,6 +48,10 @@ func main() {
 	assertFlag("ca", caPath)
 	assertFlag("cert", certPath)
 	assertFlag("key", keyPath)
+
+	if sourceID == "" {
+		sourceID = origin
+	}
 
 	stdoutLogLevel := lager.INFO
 	if debug {
@@ -65,13 +71,14 @@ func main() {
 	loggregatorClient, err := loggregator.NewIngressClient(tlsConfig,
 		loggregator.WithAddr(agentAddr),
 		loggregator.WithLogger(&logWrapper{logger}),
+		loggregator.WithTag("origin", origin),
 	)
 	if err != nil {
 		logger.Error("Failed to initialize loggregator client", err)
 		os.Exit(1)
 	}
 
-	egressClient := metrics.NewEgressClient(loggregatorClient, origin)
+	egressClient := metrics.NewEgressClient(loggregatorClient, sourceID)
 
 	process(logger, egressClient, metricsCmd, metricsCmdArgs...)
 	for {
