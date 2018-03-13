@@ -31,21 +31,32 @@ func NewEgressClient(inClient GaugeIngressClient, sourceID string) *EgressClient
 
 func (c *EgressClient) Emit(metrics Metrics, logger Logger) {
 	if len(metrics) < 1 {
+		logger.Info("sending-metrics", lager.Data{
+			"details": "no metrics to send",
+		})
 		return
 	}
+
 	if c.sourceID == "" {
 		e := errors.New("You must set a source ID")
 		logger.Error("sending metrics failed", e, lager.Data{
 			"Emit": "failed",
 		})
-
 	}
-	logger.Info("sending-metrics", lager.Data{"details": "emitting gauges to logging platform"})
-	var opts []loggregator.EmitGaugeOption
+
+	logger.Info("sending-metrics", lager.Data{
+		"details": "emitting gauges to logging platform",
+		"count":   len(metrics),
+	})
+
+	opts := []loggregator.EmitGaugeOption{
+		loggregator.WithGaugeAppInfo(c.sourceID, c.instanceID),
+	}
+
 	for _, m := range metrics {
 		opts = append(opts, loggregator.WithGaugeValue(m.Key, m.Value, m.Unit))
 	}
-	opts = append(opts, loggregator.WithGaugeAppInfo(c.sourceID, c.instanceID))
+
 	c.emitter.EmitGauge(opts...)
 }
 
