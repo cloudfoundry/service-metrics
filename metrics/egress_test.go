@@ -70,9 +70,6 @@ var _ = Describe("Egress", func() {
 			Expect(env.SourceId).To(Equal("source-1"))
 			Expect(env.InstanceId).To(Equal("3"))
 			Expect(l.infoKey).To(Equal("sending-metrics"))
-			Expect(l.infoData).To(ConsistOf(
-				lager.Data{"details": "emitting gauges to logging platform"},
-			))
 		})
 
 		It("logs an error when source ID is not specified", func() {
