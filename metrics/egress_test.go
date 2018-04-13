@@ -14,7 +14,7 @@ import (
 
 var _ = Describe("Egress", func() {
 	var (
-		m   metrics.Metrics
+		m   []metrics.GaugeMetric
 		l   *spyLogger
 		in  *spyIngressClient
 		c   *metrics.EgressClient
@@ -22,7 +22,7 @@ var _ = Describe("Egress", func() {
 	)
 
 	BeforeEach(func() {
-		m = metrics.Metrics{
+		m = []metrics.GaugeMetric{
 			{
 				Key:   "metric-1",
 				Value: 0.1,
@@ -52,15 +52,11 @@ var _ = Describe("Egress", func() {
 	Context("Emit", func() {
 		It("passes logs to IngressClient", func() {
 			c.SetInstanceID(3)
+			c.EmitGauges(m, l)
 
-			c.Emit(m, l)
+			Expect(in.emitGaugeCalled).To(BeTrue())
 
-			Expect(in.emitCalled).To(BeTrue())
-
-			for _, o := range in.opts {
-				o(env)
-			}
-
+			env := in.gaugeEnvs[0]
 			Expect(env.GetGauge().Metrics).To(HaveKeyWithValue("metric-2",
 				&loggregator_v2.GaugeValue{Value: 1.3, Unit: "s"}),
 			)
@@ -74,7 +70,7 @@ var _ = Describe("Egress", func() {
 
 		It("logs an error when source ID is not specified", func() {
 			c = metrics.NewEgressClient(in, "")
-			c.Emit(m, l)
+			c.EmitGauges(m, l)
 
 			Expect(l.errAction).To(Equal("sending metrics failed"))
 			Expect(l.errData).To(ConsistOf(
@@ -88,9 +84,10 @@ var _ = Describe("Egress", func() {
 })
 
 type spyIngressClient struct {
-	emitCalled bool
-	opts       []loggregator.EmitGaugeOption
-	env        *loggregator_v2.Envelope
+	emitGaugeCalled   bool
+	emitCounterCalled bool
+	gaugeEnvs         []*loggregator_v2.Envelope
+	counterEnvs       []*loggregator_v2.Envelope
 }
 
 func newSpyIngressClient() *spyIngressClient {
@@ -98,31 +95,45 @@ func newSpyIngressClient() *spyIngressClient {
 }
 
 func (s *spyIngressClient) EmitGauge(opts ...loggregator.EmitGaugeOption) {
-	s.emitCalled = true
-	s.opts = opts
+	s.emitGaugeCalled = true
+	s.gaugeEnvs = append(s.gaugeEnvs, gaugeEnv(opts))
 }
 
-type spyLogger struct {
-	// map of action strings to slice of data called against the actions
-	infoKey   string
-	infoData  []lager.Data
-	errAction string
-	errData   []lager.Data
-	err       error
-	errCalled bool
+func (s *spyIngressClient) EmitCounter(name string, opts ...loggregator.EmitCounterOption) {
+	s.emitCounterCalled = true
+	s.counterEnvs = append(s.counterEnvs, counterEnv(name, opts))
 }
 
-func newSpyLogger() *spyLogger {
-	return &spyLogger{}
-}
-func (l *spyLogger) Info(action string, data ...lager.Data) {
-	l.infoKey = action
-	l.infoData = data
+func gaugeEnv(opts []loggregator.EmitGaugeOption) *loggregator_v2.Envelope {
+	env := &loggregator_v2.Envelope{
+		Timestamp: time.Now().UnixNano(),
+		Message: &loggregator_v2.Envelope_Gauge{
+			Gauge: &loggregator_v2.Gauge{
+				Metrics: make(map[string]*loggregator_v2.GaugeValue),
+			},
+		},
+		Tags: make(map[string]string),
+	}
+	for _, o := range opts {
+		o(env)
+	}
+
+	return env
 }
 
-func (l *spyLogger) Error(action string, err error, data ...lager.Data) {
-	l.errAction = action
-	l.errData = data
-	l.err = err
-	l.errCalled = true
+func counterEnv(name string, opts []loggregator.EmitCounterOption) *loggregator_v2.Envelope {
+	env := &loggregator_v2.Envelope{
+		Timestamp: time.Now().UnixNano(),
+		Message: &loggregator_v2.Envelope_Counter{
+			Counter: &loggregator_v2.Counter{
+				Name: name,
+			},
+		},
+		Tags: make(map[string]string),
+	}
+	for _, o := range opts {
+		o(env)
+	}
+
+	return env
 }
