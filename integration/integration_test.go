@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"sync"
 
@@ -32,6 +33,7 @@ var _ = Describe("service-metrics", func() {
 		certPath        string
 		keyPath         string
 		stubAgent       *stubAgent
+		envVars         []string
 	)
 
 	var metricsJson = `
@@ -61,6 +63,7 @@ var _ = Describe("service-metrics", func() {
 		caPath = Cert("loggregator-ca.crt")
 		certPath = Cert("service-metrics.crt")
 		keyPath = Cert("service-metrics.key")
+		envVars = nil
 	})
 
 	JustBeforeEach(func() {
@@ -74,7 +77,8 @@ var _ = Describe("service-metrics", func() {
 			caPath,
 			certPath,
 			keyPath,
-			metricsCmdArgs...,
+			metricsCmdArgs,
+			envVars,
 		)
 	})
 
@@ -97,6 +101,49 @@ var _ = Describe("service-metrics", func() {
 			))
 			Expect(env.Tags["origin"]).To(Equal("p-service-origin"))
 			Expect(env.SourceId).To(Equal("my-source-id"))
+		})
+
+		Context("when no flags are provided", func() {
+			BeforeEach(func() {
+				origin = ""
+				sourceID = ""
+				debugLog = false
+				metricsCmd = ""
+				metricsCmdArgs = nil
+				metricsInterval = ""
+				caPath = ""
+				certPath = ""
+				keyPath = ""
+
+				envVars = []string{
+					"ORIGIN=p-service-origin",
+					"SOURCE_ID=my-source-id",
+					fmt.Sprint("AGENT_ADDR=", stubAgent.address),
+					"METRICS_INTERVAL=10ms",
+					"METRICS_CMD=/bin/echo",
+					fmt.Sprint("METRICS_CMD_ARG=", metricsJson),
+					"DEBUG=false",
+					fmt.Sprint("CA_PATH=", Cert("loggregator-ca.crt")),
+					fmt.Sprint("CERT_PATH=", Cert("service-metrics.crt")),
+					fmt.Sprint("KEY_PATH=", Cert("service-metrics.key")),
+				}
+			})
+
+			It("repeatedly emits metrics", func() {
+				Eventually(func() int {
+					return len(stubAgent.GetEnvelopes())
+				}).Should(BeNumerically(">", 5))
+				env := stubAgent.GetEnvelopes()[0]
+
+				Expect(env.GetGauge().GetMetrics()).To(HaveKeyWithValue("loadMetric",
+					&loggregator_v2.GaugeValue{Value: 4.0, Unit: "Load"},
+				))
+				Expect(env.GetGauge().GetMetrics()).To(HaveKeyWithValue("temperatureMetric",
+					&loggregator_v2.GaugeValue{Value: 99, Unit: "Temperature"},
+				))
+				Expect(env.Tags["origin"]).To(Equal("p-service-origin"))
+				Expect(env.SourceId).To(Equal("my-source-id"))
+			})
 		})
 	})
 

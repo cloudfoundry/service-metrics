@@ -40,17 +40,40 @@ func runCmd(
 	caPath string,
 	certPath string,
 	keyPath string,
-	metricsCmdArgs ...string,
+	metricsCmdArgs []string,
+	envVars []string,
 ) *gexec.Session {
-	cmdArgs := []string{
-		"--origin", origin,
-		"--source-id", sourceID,
-		"--agent-addr", agentAddress,
-		"--metrics-interval", metricsInterval,
-		"--metrics-cmd", metricsCmd,
-		"--ca", caPath,
-		"--cert", certPath,
-		"--key", keyPath,
+	var cmdArgs []string
+	if origin != "" {
+		cmdArgs = append(cmdArgs, "--origin", origin)
+	}
+
+	if sourceID != "" {
+		cmdArgs = append(cmdArgs, "--source-id", sourceID)
+	}
+
+	if agentAddress != "" {
+		cmdArgs = append(cmdArgs, "--agent-addr", agentAddress)
+	}
+
+	if metricsInterval != "" {
+		cmdArgs = append(cmdArgs, "--metrics-interval", metricsInterval)
+	}
+
+	if metricsCmd != "" {
+		cmdArgs = append(cmdArgs, "--metrics-cmd", metricsCmd)
+	}
+
+	if caPath != "" {
+		cmdArgs = append(cmdArgs, "--ca", caPath)
+	}
+
+	if certPath != "" {
+		cmdArgs = append(cmdArgs, "--cert", certPath)
+	}
+
+	if keyPath != "" {
+		cmdArgs = append(cmdArgs, "--key", keyPath)
 	}
 
 	if debugLog {
@@ -65,6 +88,7 @@ func runCmd(
 
 	cmd.Stdout = GinkgoWriter
 	cmd.Stderr = GinkgoWriter
+	cmd.Env = envVars
 
 	session, err := gexec.Start(cmd, GinkgoWriter, GinkgoWriter)
 	Expect(err).ToNot(HaveOccurred())
