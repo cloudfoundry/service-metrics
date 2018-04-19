@@ -6,9 +6,9 @@ import (
 	"os"
 	"time"
 
-	envstruct "code.cloudfoundry.org/go-envstruct"
 	loggregator "code.cloudfoundry.org/go-loggregator"
 	"code.cloudfoundry.org/lager"
+	envstruct "github.com/cloudfoundry/go-envstruct"
 	"github.com/cloudfoundry/service-metrics/metrics"
 )
 
