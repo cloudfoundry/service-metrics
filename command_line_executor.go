@@ -6,7 +6,7 @@ import (
 	"syscall"
 
 	"code.cloudfoundry.org/lager"
-	"github.com/cloudfoundry/service-metrics/metrics"
+	"code.cloudfoundry.org/service-metrics/metrics"
 )
 
 // CommandLineExecutor implements metrics.Executor
