@@ -18,7 +18,7 @@ func TestIntegration(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	srcPath := "github.com/cloudfoundry/service-metrics"
+	srcPath := "code.cloudfoundry.org/service-metrics"
 	var err error
 	execPath, err = gexec.Build(srcPath)
 	if err != nil {

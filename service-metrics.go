@@ -8,8 +8,8 @@ import (
 
 	loggregator "code.cloudfoundry.org/go-loggregator"
 	"code.cloudfoundry.org/lager"
+	"code.cloudfoundry.org/service-metrics/metrics"
 	envstruct "github.com/cloudfoundry/go-envstruct"
-	"github.com/cloudfoundry/service-metrics/metrics"
 )
 
 type config struct {

@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/cloudfoundry/service-metrics/metrics"
+	"code.cloudfoundry.org/service-metrics/metrics"
 
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
