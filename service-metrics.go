@@ -178,3 +178,7 @@ type logWrapper struct {
 func (l *logWrapper) Printf(f string, a ...interface{}) {
 	l.Info(fmt.Sprintf(f, a...))
 }
+
+func (l *logWrapper) Panicf(f string, a ...interface{}) {
+	l.Fatal(fmt.Sprintf(f, a...), nil)
+}
