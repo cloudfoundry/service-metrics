@@ -14,11 +14,10 @@ import (
 
 var _ = Describe("Egress", func() {
 	var (
-		m   []metrics.GaugeMetric
-		l   *spyLogger
-		in  *spyIngressClient
-		c   *metrics.EgressClient
-		env *loggregator_v2.Envelope
+		m  []metrics.GaugeMetric
+		l  *spyLogger
+		in *spyIngressClient
+		c  *metrics.EgressClient
 	)
 
 	BeforeEach(func() {
@@ -33,15 +32,6 @@ var _ = Describe("Egress", func() {
 				Value: 1.3,
 				Unit:  "s",
 			},
-		}
-		env = &loggregator_v2.Envelope{
-			Timestamp: time.Now().UnixNano(),
-			Message: &loggregator_v2.Envelope_Gauge{
-				Gauge: &loggregator_v2.Gauge{
-					Metrics: make(map[string]*loggregator_v2.GaugeValue),
-				},
-			},
-			Tags: make(map[string]string),
 		}
 
 		l = newSpyLogger()
