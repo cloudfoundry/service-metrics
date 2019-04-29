@@ -1,6 +1,6 @@
 package integration_test
 
-//go:generate go get github.com/jteeuwen/go-bindata/...
+//go:generate go get github.com/loggregator/go-bindata/...
 //go:generate $GOPATH/scripts/generate-certs
 //go:generate go-bindata -nocompress -pkg integration_test -o bindata_test.go -prefix certs/ certs/
 //go:generate rm -rf certs/
