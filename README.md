@@ -1,4 +1,6 @@
-# service-metrics
+# (Deprecated) service-metrics
+
+This repo is deprecated in favor of https://github.com/cloudfoundry/service-metrics-release
 
 Sevice Metrics is a framework for easily sending metrics to [Cloud Foundry's Loggregator](https://github.com/cloudfoundry/loggregator) system.
 
